@@ -1,8 +1,8 @@
 import Order from '../models/Order';
 import Pizza from '../models/Pizza';
-import Size from '../models/Size';
-import Flavor from '../models/Flavor';
-import Customization from '../models/Customization';
+import Size, { ISize } from '../models/Size';
+import Flavor, { IFlavor } from '../models/Flavor';
+import Customization, { ICustomization } from '../models/Customization';
 
 interface PizzaData {
   size: string;
@@ -49,9 +49,9 @@ class OrderService {
   }
 
   static calculatePriceAndTime(
-    size: any,
-    flavor: any,
-    customizations: any[]
+    size: ISize,
+    flavor: IFlavor,
+    customizations: ICustomization[]
   ): { price: number; preparationTime: number } {
     let price = size.price;
     let preparationTime = size.preparationTime + flavor.additionalTime;
