@@ -10,67 +10,102 @@ interface PizzaData {
   customizations?: string[];
 }
 
+interface PizzaDetails {
+  price: number;
+  preparationTime: number;
+  size: object;
+  flavor: object;
+  customizations: object[];
+}
+
 class OrderService {
-  static async calculatePizzaDetails(pizzaData: PizzaData) {
-    const { size, flavor, customizations = [] } = pizzaData;
-
-    const foundSize = await Size.findOne({ name: size });
-    if (!foundSize) {
-      throw new Error(`Tamanho não encontrado: ${size}`);
+  static async findSize(sizeName: string) {
+    const size = await Size.findOne({ name: sizeName });
+    if (!size) {
+      throw new Error(`Tamanho não encontrado: ${sizeName}`);
     }
+    return size;
+  }
 
-    const foundFlavor = await Flavor.findOne({ name: flavor });
-    if (!foundFlavor) {
-      throw new Error(`Sabor não encontrado: ${flavor}`);
+  static async findFlavor(flavorName: string) {
+    const flavor = await Flavor.findOne({ name: flavorName });
+    if (!flavor) {
+      throw new Error(`Sabor não encontrado: ${flavorName}`);
     }
+    return flavor;
+  }
 
-    const foundCustomizations = await Promise.all(
-      customizations.map(async (customizationName: string) => {
-        const foundCustomization = await Customization.findOne({ name: customizationName });
-        if (!foundCustomization) {
-          throw new Error(`Personalização não encontrada: ${customizationName}`);
+  static async findCustomizations(customizationNames: string[]) {
+    const customizations = await Promise.all(
+      customizationNames.map(async (name) => {
+        const customization = await Customization.findOne({ name });
+        if (!customization) {
+          throw new Error(`Personalização não encontrada: ${name}`);
         }
-        return foundCustomization.toObject();
+        return customization;
       })
     );
+    return customizations;
+  }
 
-    let pizzaPrice = foundSize.price;
-    let pizzaPreparationTime = foundSize.preparationTime + foundFlavor.additionalTime;
+  static calculatePriceAndTime(
+    size: any,
+    flavor: any,
+    customizations: any[]
+  ): { price: number; preparationTime: number } {
+    let price = size.price;
+    let preparationTime = size.preparationTime + flavor.additionalTime;
 
-    foundCustomizations.forEach(customization => {
-      pizzaPrice += customization.price;
-      pizzaPreparationTime += customization.additionalTime;
+    customizations.forEach((customization) => {
+      price += customization.price;
+      preparationTime += customization.additionalTime;
     });
 
-    return { price: pizzaPrice, preparationTime: pizzaPreparationTime, foundSize, foundFlavor, foundCustomizations };
+    return { price, preparationTime };
+  }
+
+  static async calculatePizzaDetails(pizzaData: PizzaData): Promise<PizzaDetails> {
+    const { size, flavor, customizations = [] } = pizzaData;
+
+    const foundSize = await this.findSize(size);
+    const foundFlavor = await this.findFlavor(flavor);
+    const foundCustomizations = await this.findCustomizations(customizations);
+
+    const { price, preparationTime } = this.calculatePriceAndTime(
+      foundSize,
+      foundFlavor,
+      foundCustomizations
+    );
+
+    return {
+      price,
+      preparationTime,
+      size: foundSize.toObject(),
+      flavor: foundFlavor.toObject(),
+      customizations: foundCustomizations.map((c) => c.toObject()),
+    };
   }
 
   static async createOrder(pizzas: PizzaData[]) {
     const createdPizzas = await Promise.all(
-      pizzas.map(async (pizzaData: PizzaData) => {
-        const { price, preparationTime, foundFlavor, foundSize, foundCustomizations } =
-          await this.calculatePizzaDetails(pizzaData);
-
-        return Pizza.create({
-          size: foundSize.toObject(),
-          flavor: foundFlavor.toObject(),
-          customizations: foundCustomizations,
-          price,
-          preparationTime,
-        });
+      pizzas.map(async (pizzaData) => {
+        const pizzaDetails = await this.calculatePizzaDetails(pizzaData);
+        return Pizza.create(pizzaDetails);
       })
     );
 
     const totalValue = createdPizzas.reduce((sum, pizza) => sum + pizza.price, 0);
-    const totalPreparationTime = createdPizzas.reduce((sum, pizza) => sum + pizza.preparationTime, 0);
+    const totalPreparationTime = createdPizzas.reduce(
+      (sum, pizza) => sum + pizza.preparationTime,
+      0
+    );
 
-    const order = new Order({
+    const order = await Order.create({
       totalValue,
       totalPreparationTime,
-      pizzas: createdPizzas.map(pizza => pizza._id),
+      pizzas: createdPizzas.map((pizza) => pizza._id),
     });
 
-    await order.save();
     return order.populate('pizzas');
   }
 
@@ -79,7 +114,6 @@ class OrderService {
     if (!order) {
       throw new Error('Pedido não encontrado.');
     }
-
     return order;
   }
 }
